@@ -122,12 +122,34 @@ export default function Home() {
     };
   }, []);
 
-  // Auto-scroll to bottom of conversation
+  // Auto-scroll to bottom of conversation with smooth animation
   useEffect(() => {
     if (conversationRef.current) {
-      conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
+      const element = conversationRef.current;
+      const scrollToBottom = () => {
+        element.scrollTo({
+          top: element.scrollHeight,
+          behavior: 'smooth'
+        });
+      };
+      
+      // Small delay to ensure content is rendered
+      setTimeout(scrollToBottom, 100);
     }
   }, [messages]);
+
+  // Additional scroll trigger when processing state changes
+  useEffect(() => {
+    if (conversationRef.current && isProcessing) {
+      const element = conversationRef.current;
+      setTimeout(() => {
+        element.scrollTo({
+          top: element.scrollHeight,
+          behavior: 'smooth'
+        });
+      }, 100);
+    }
+  }, [isProcessing]);
 
   const createTaskMutation = useMutation({
     mutationFn: async (data: { prompt: string; taskId: string }) => {
@@ -356,7 +378,7 @@ export default function Home() {
 
           {/* Conversation Flow */}
           <div className="lg:col-span-2">
-            <Card>
+            <Card className="h-[650px] flex flex-col">
               {/* Flow Header */}
               <div className="border-b border-gray-200 p-6">
                 <div className="flex items-center justify-between">
@@ -409,10 +431,13 @@ export default function Home() {
               </div>
 
               {/* Conversation Messages */}
-              <div className="p-6">
+              <div className="flex-1 overflow-hidden bg-gray-50">
                 <div 
                   ref={conversationRef}
-                  className="space-y-4 max-h-96 overflow-y-auto"
+                  className="h-full overflow-y-auto scrollbar-thin px-4 py-6"
+                  style={{ scrollBehavior: 'smooth' }}
+                >
+                  <div className="space-y-4 max-w-4xl"
                 >
                   <AnimatePresence>
                     {messages.map((message, index) => {
@@ -424,29 +449,29 @@ export default function Home() {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ duration: 0.3 }}
                           className={cn(
-                            "p-4 rounded-lg",
+                            "p-4 rounded-lg shadow-sm border border-gray-100 max-w-full mx-2",
                             getMessageTypeClass(message.messageType)
                           )}
                         >
                           <div className="flex items-start space-x-3">
                             <div className={cn(
-                              "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                              "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm",
                               getAgentColor(message.agent)
                             )}>
-                              <Icon className="w-4 h-4 text-white" />
+                              <Icon className="w-5 h-5 text-white" />
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center space-x-2 mb-1">
-                                <h4 className="text-sm font-medium text-gray-900">
+                            <div className="flex-1 min-w-0 overflow-hidden">
+                              <div className="flex items-center space-x-2 mb-2">
+                                <h4 className="text-sm font-semibold text-gray-900">
                                   {getAgentName(message.agent)}
                                 </h4>
-                                <span className="text-xs text-gray-500">
+                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
                                   {formatTimestamp(message.timestamp)}
                                 </span>
                               </div>
-                              <p className="text-sm text-gray-700 leading-relaxed">
+                              <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">
                                 {message.message}
-                              </p>
+                              </div>
                             </div>
                           </div>
                         </motion.div>
@@ -454,13 +479,24 @@ export default function Home() {
                     })}
                   </AnimatePresence>
                   
-                  {messages.length === 0 && !isProcessing && (
-                    <div className="text-center py-12">
-                      <Bot className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">Ready to Start</h3>
-                      <p className="text-gray-500">Enter a prompt and click "Process Task" to begin the agent interaction simulation.</p>
-                    </div>
-                  )}
+                    {messages.length === 0 && !isProcessing && (
+                      <div className="text-center py-12 mx-2">
+                        <Bot className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">Ready to Start</h3>
+                        <p className="text-gray-500">Enter a prompt and click "Process Task" to begin the agent interaction simulation.</p>
+                      </div>
+                    )}
+
+                    {isProcessing && messages.length === 0 && (
+                      <div className="text-center py-12 mx-2">
+                        <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <LoadingDots />
+                        </div>
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">Processing Task</h3>
+                        <p className="text-gray-500">Agents are working on your request...</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </Card>
