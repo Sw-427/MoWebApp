@@ -4,7 +4,7 @@ import { type InsertMessage, type AgentStatus, type TaskProgress } from "@shared
 export class ExternalAgentService {
   private activeProcessing = new Map<number, boolean>();
 
-  async processTask(taskId: number, prompt: string): Promise<void> {
+  async processTask(taskId: number, prompt: string, selectedTaskId?: string): Promise<void> {
     if (this.activeProcessing.get(taskId)) {
       throw new Error("Task is already being processed");
     }
@@ -15,7 +15,7 @@ export class ExternalAgentService {
       await storage.updateTaskStatus(taskId, "processing");
       
       // Make API call to external service
-      const response = await this.callExternalAPI(prompt);
+      const response = await this.callExternalAPI(prompt, selectedTaskId || "60d0b5b_2");
       const conversationFlow = this.parseAPIResponse(response);
       
       // Process the conversation flow with realistic delays
@@ -44,14 +44,14 @@ export class ExternalAgentService {
     }
   }
 
-  private async callExternalAPI(prompt: string): Promise<any> {
+  private async callExternalAPI(prompt: string, taskId: string): Promise<any> {
     const response = await fetch('https://closing-vocal-fowl.ngrok-free.app/ask', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        task_id: "60d0b5b_2",
+        task_id: taskId,
         user_q: prompt
       }),
     });

@@ -56,13 +56,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new task
   app.post("/api/tasks", async (req, res) => {
     try {
-      const validatedData = insertTaskSchema.parse(req.body);
-      const task = await storage.createTask(validatedData);
+      const validatedData = insertTaskSchema.extend({
+        taskId: z.string()
+      }).parse(req.body);
+      
+      const task = await storage.createTask({
+        prompt: validatedData.prompt,
+        status: "pending"
+      });
       
       res.json(task);
 
       // Start processing the task asynchronously
-      processTaskWithUpdates(task.id, validatedData.prompt, broadcast);
+      processTaskWithUpdates(task.id, validatedData.prompt, validatedData.taskId, broadcast);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ 
@@ -118,10 +124,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Helper function to process task and send real-time updates
-  async function processTaskWithUpdates(taskId: number, prompt: string, broadcast: Function) {
+  async function processTaskWithUpdates(taskId: number, prompt: string, selectedTaskId: string, broadcast: Function) {
     try {
       // Start processing in background
-      const processingPromise = externalAgentService.processTask(taskId, prompt);
+      const processingPromise = externalAgentService.processTask(taskId, prompt, selectedTaskId);
       
       // Send periodic updates while processing
       const progressInterval = setInterval(async () => {

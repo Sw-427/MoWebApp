@@ -6,10 +6,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { LoadingDots } from "@/components/ui/loading-dots";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatTimestamp, cn } from "@/lib/utils";
-import { Bot, Phone, CreditCard, Crown, Play, MessageCircle } from "lucide-react";
+import { Bot, Phone, CreditCard, Crown, Play, MessageCircle, ExternalLink } from "lucide-react";
 import type { Task, Message, TaskProgress, AgentStatus } from "@shared/schema";
+import taskIds from "@assets/tasks_ids_1750829026136.json";
 
 const samplePrompts = [
   "The last Venmo payment request I sent to Cory was an accident and they approved it. Send them the money back.",
@@ -19,6 +21,7 @@ const samplePrompts = [
 
 export default function Home() {
   const [prompt, setPrompt] = useState("The last Venmo payment request I sent to Cory was an accident and they approved it. Send them the money back.");
+  const [selectedTaskId, setSelectedTaskId] = useState<string>("60d0b5b_2");
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [progress, setProgress] = useState(0);
@@ -67,35 +70,39 @@ export default function Home() {
             setAgentStatus(progressData.agentStatus);
             
             if (progressData.currentMessage) {
-              const currentMsg = progressData.currentMessage;
-              // Add new message if it's different from the last one
               setMessages(prev => {
-                const lastMessage = prev[prev.length - 1];
-                if (!lastMessage || 
-                    lastMessage.agent !== currentMsg.agent ||
-                    lastMessage.message !== currentMsg.message) {
-                  return [...prev, {
-                    id: Date.now(),
-                    taskId: progressData.taskId,
-                    agent: currentMsg.agent,
-                    message: currentMsg.message,
-                    messageType: currentMsg.messageType,
-                    timestamp: new Date(currentMsg.timestamp),
-                    metadata: null
-                  }];
-                }
-                return prev;
+                const newMessage = {
+                  id: Date.now(),
+                  taskId: progressData.taskId,
+                  agent: progressData.currentMessage!.agent,
+                  message: progressData.currentMessage!.message,
+                  messageType: progressData.currentMessage!.messageType,
+                  metadata: null,
+                  timestamp: new Date(progressData.currentMessage!.timestamp)
+                };
+                
+                // Avoid duplicate messages
+                const exists = prev.some(msg => 
+                  msg.agent === newMessage.agent && 
+                  msg.message === newMessage.message &&
+                  Math.abs(msg.timestamp.getTime() - newMessage.timestamp.getTime()) < 1000
+                );
+                
+                return exists ? prev : [...prev, newMessage];
               });
             }
           } else if (data.type === 'taskCompleted') {
             setIsProcessing(false);
             setTaskCompleted(true);
             setProgress(100);
-            const progressData: TaskProgress = data.data;
-            setAgentStatus(progressData.agentStatus);
+            setAgentStatus({
+              supervisor: "complete",
+              phone: "complete",
+              venmo: "complete"
+            });
           } else if (data.type === 'taskError') {
-            setIsProcessing(false);
             console.error('Task error:', data.data);
+            setIsProcessing(false);
           }
         } catch (error) {
           console.log('WebSocket message parsing error:', error);
@@ -123,8 +130,8 @@ export default function Home() {
   }, [messages]);
 
   const createTaskMutation = useMutation({
-    mutationFn: async (prompt: string) => {
-      const response = await apiRequest("POST", "/api/tasks", { prompt });
+    mutationFn: async (data: { prompt: string; taskId: string }) => {
+      const response = await apiRequest("POST", "/api/tasks", data);
       return response.json();
     },
     onSuccess: (task: Task) => {
@@ -142,8 +149,8 @@ export default function Home() {
   });
 
   const handleProcessTask = () => {
-    if (!prompt.trim() || isProcessing) return;
-    createTaskMutation.mutate(prompt);
+    if (!prompt.trim() || !selectedTaskId || isProcessing) return;
+    createTaskMutation.mutate({ prompt, taskId: selectedTaskId });
   };
 
   const getAgentIcon = (agent: string) => {
@@ -200,51 +207,38 @@ export default function Home() {
   const getMessageTypeClass = (messageType: string) => {
     switch (messageType) {
       case 'success':
-        return 'border-l-4 border-green-500 bg-green-50 dark:bg-green-950';
+        return 'border-l-4 border-green-500 bg-green-50';
       case 'action':
-        return 'border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-950';
+        return 'border-l-4 border-blue-500 bg-blue-50';
       case 'completion':
-        return 'border-l-4 border-green-500 bg-green-50 dark:bg-green-950';
+        return 'border-l-4 border-green-500 bg-green-50';
       case 'processing':
-        return 'border-l-4 border-yellow-500 bg-yellow-50 dark:bg-yellow-950';
+        return 'border-l-4 border-yellow-500 bg-yellow-50';
       case 'delegation':
-        return 'border-l-4 border-purple-500 bg-purple-50 dark:bg-purple-950';
+        return 'border-l-4 border-purple-500 bg-purple-50';
+      case 'input':
       case 'user_input':
-        return 'border-l-4 border-gray-500 bg-gray-50 dark:bg-gray-900';
+        return 'border-l-4 border-gray-500 bg-gray-50';
       default:
-        return 'bg-gray-50 dark:bg-gray-900';
+        return 'bg-gray-50';
     }
   };
 
-  const getAgentStatusColor = (status: string) => {
+  const getAgentStatusIcon = (status: string) => {
     switch (status) {
       case 'active':
-        return 'bg-blue-500 animate-pulse-slow';
+        return <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>;
       case 'complete':
-        return 'bg-green-500';
+        return <div className="w-2 h-2 bg-blue-500 rounded-full"></div>;
       default:
-        return 'bg-gray-300';
+        return <div className="w-2 h-2 bg-gray-400 rounded-full"></div>;
     }
-  };
-
-  const getAgentRingClass = (agent: string, status: string) => {
-    if (status === 'active') {
-      switch (agent) {
-        case 'supervisor':
-          return 'agent-ring-blue';
-        case 'phone':
-          return 'agent-ring-amber';
-        case 'venmo':
-          return 'agent-ring-violet';
-      }
-    }
-    return '';
   };
 
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -277,6 +271,24 @@ export default function Home() {
                 
                 <div className="space-y-4">
                   <div>
+                    <label htmlFor="taskId" className="block text-sm font-medium text-gray-700 mb-2">
+                      Select Task ID
+                    </label>
+                    <Select value={selectedTaskId} onValueChange={setSelectedTaskId} disabled={isProcessing}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose a task ID..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {taskIds.map((taskId) => (
+                          <SelectItem key={taskId} value={taskId}>
+                            {taskId}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
                     <label htmlFor="prompt" className="block text-sm font-medium text-gray-700 mb-2">
                       Enter your task prompt
                     </label>
@@ -292,7 +304,7 @@ export default function Home() {
                   
                   <Button 
                     onClick={handleProcessTask}
-                    disabled={!prompt.trim() || isProcessing}
+                    disabled={!prompt.trim() || !selectedTaskId || isProcessing}
                     className="w-full"
                   >
                     {isProcessing ? (
@@ -308,9 +320,22 @@ export default function Home() {
                     )}
                   </Button>
 
+                  {/* Task Explorer Link */}
+                  <div className="border-t border-gray-200 pt-4">
+                    <a
+                      href="https://appworld.dev/task-explorer"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center space-x-2 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>View Task Details on AppWorld Explorer</span>
+                    </a>
+                  </div>
+
                   {/* Sample Prompts */}
                   <div className="border-t border-gray-200 pt-4">
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Sample Prompts</h3>
+                    <h3 className="text-sm font-medium text-gray-700 mb-3">Sample Prompts</h3>
                     <div className="space-y-2">
                       {samplePrompts.map((samplePrompt, index) => (
                         <button
@@ -346,150 +371,101 @@ export default function Home() {
                     </span>
                   </div>
                 </div>
-                
-                {/* Agent Status Bar */}
-                <div className="flex items-center justify-center space-x-8 mt-6">
-                  <div className="flex flex-col items-center">
-                    <div className={cn(
-                      "w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center mb-2 transition-all duration-300",
-                      getAgentRingClass('phone', agentStatus.phone)
-                    )}>
-                      <Phone className="text-amber-600 text-lg" />
-                    </div>
-                    <span className="text-xs font-medium text-gray-600">Phone Agent</span>
-                    <div className={cn(
-                      "w-2 h-2 rounded-full mt-1",
-                      getAgentStatusColor(agentStatus.phone)
-                    )}></div>
-                  </div>
-                  
-                  <div className="flex flex-col items-center">
-                    <div className={cn(
-                      "w-14 h-14 bg-blue-100 rounded-lg flex items-center justify-center mb-2 transition-all duration-300 transform rotate-45",
-                      getAgentRingClass('supervisor', agentStatus.supervisor)
-                    )}>
-                      <Crown className="text-blue-600 text-lg transform -rotate-45" />
-                    </div>
-                    <span className="text-xs font-medium text-gray-600">Supervisor</span>
-                    <div className={cn(
-                      "w-2 h-2 rounded-full mt-1",
-                      getAgentStatusColor(agentStatus.supervisor)
-                    )}></div>
-                  </div>
-                  
-                  <div className="flex flex-col items-center">
-                    <div className={cn(
-                      "w-12 h-12 bg-violet-100 rounded-lg flex items-center justify-center mb-2 transition-all duration-300",
-                      getAgentRingClass('venmo', agentStatus.venmo)
-                    )}>
-                      <CreditCard className="text-violet-600 text-lg" />
-                    </div>
-                    <span className="text-xs font-medium text-gray-600">Venmo Agent</span>
-                    <div className={cn(
-                      "w-2 h-2 rounded-full mt-1",
-                      getAgentStatusColor(agentStatus.venmo)
-                    )}></div>
-                  </div>
-                </div>
               </div>
 
-              {/* Conversation Area */}
-              <div ref={conversationRef} className="p-6 min-h-96 max-h-96 overflow-y-auto space-y-4">
-                {messages.length === 0 ? (
-                  <div className="text-center text-gray-500 text-sm py-8">
-                    <MessageCircle className="mx-auto text-3xl text-gray-300 mb-3 w-12 h-12" />
-                    <p>Start a task to see agent interactions</p>
+              {/* Agent Status Dashboard */}
+              <div className="border-b border-gray-200 p-6">
+                <div className="grid grid-cols-3 gap-6">
+                  {(['supervisor', 'phone', 'venmo'] as const).map((agent) => {
+                    const Icon = getAgentIcon(agent);
+                    return (
+                      <div key={agent} className="flex items-center space-x-3">
+                        <div className={cn(
+                          "w-10 h-10 rounded-lg flex items-center justify-center transition-colors duration-300",
+                          getAgentColor(agent),
+                          agentStatus[agent] === 'active' ? 'ring-2 ring-offset-2 ring-blue-400' : ''
+                        )}>
+                          <Icon className="w-5 h-5 text-white" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2">
+                            <h3 className="text-sm font-medium text-gray-900">{getAgentName(agent)}</h3>
+                            {getAgentStatusIcon(agentStatus[agent])}
+                          </div>
+                          <p className="text-xs text-gray-500 capitalize">{agentStatus[agent]}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {/* Progress Bar */}
+                {isProcessing && (
+                  <div className="mt-4">
+                    <Progress value={progress} className="h-2" />
+                    <p className="text-xs text-gray-500 mt-1">{Math.round(progress)}% complete</p>
                   </div>
-                ) : (
+                )}
+              </div>
+
+              {/* Conversation Messages */}
+              <div className="p-6">
+                <div 
+                  ref={conversationRef}
+                  className="space-y-4 max-h-96 overflow-y-auto"
+                >
                   <AnimatePresence>
                     {messages.map((message, index) => {
                       const Icon = getAgentIcon(message.agent);
                       return (
                         <motion.div
-                          key={message.id}
+                          key={`${message.id}-${index}`}
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ duration: 0.3 }}
                           className={cn(
-                            "flex items-start space-x-3 p-4 rounded-lg",
+                            "p-4 rounded-lg",
                             getMessageTypeClass(message.messageType)
                           )}
                         >
-                          <div className={cn(
-                            "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
-                            getAgentColor(message.agent)
-                          )}>
-                            <Icon className="text-white text-sm" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center space-x-2 mb-1">
-                              <span className="text-sm font-medium text-gray-900">
-                                {getAgentName(message.agent)}
-                              </span>
-                              <span className="text-xs text-gray-500">
-                                {formatTimestamp(message.timestamp)}
-                              </span>
+                          <div className="flex items-start space-x-3">
+                            <div className={cn(
+                              "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                              getAgentColor(message.agent)
+                            )}>
+                              <Icon className="w-4 h-4 text-white" />
                             </div>
-                            <div className="text-sm text-gray-700 whitespace-pre-line">
-                              {message.message}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-2 mb-1">
+                                <h4 className="text-sm font-medium text-gray-900">
+                                  {getAgentName(message.agent)}
+                                </h4>
+                                <span className="text-xs text-gray-500">
+                                  {formatTimestamp(message.timestamp)}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-700 leading-relaxed">
+                                {message.message}
+                              </p>
                             </div>
                           </div>
                         </motion.div>
                       );
                     })}
                   </AnimatePresence>
-                )}
-              </div>
-
-              {/* Progress Bar */}
-              <div className="border-t border-gray-200 p-4">
-                <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-                  <span>Task Progress</span>
-                  <span>{Math.round(progress)}%</span>
+                  
+                  {messages.length === 0 && !isProcessing && (
+                    <div className="text-center py-12">
+                      <Bot className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Ready to Start</h3>
+                      <p className="text-gray-500">Enter a prompt and click "Process Task" to begin the agent interaction simulation.</p>
+                    </div>
+                  )}
                 </div>
-                <Progress value={progress} className="w-full" />
               </div>
             </Card>
           </div>
         </div>
-
-        {/* Results Panel */}
-        {taskCompleted && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="mt-6"
-          >
-            <Card>
-              <CardContent className="p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Task Results</h2>
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-green-800 mb-2">Task Completed Successfully</h3>
-                      <div className="text-sm text-green-700 space-y-1">
-                        {messages.filter(m => m.messageType === 'completion').map(m => (
-                          <div key={m.id} className="whitespace-pre-line">
-                            {m.message}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-3 text-xs text-green-600">
-                        Total execution time: {((messages.length * 1.5) / 60).toFixed(1)} minutes
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
       </div>
     </div>
   );
